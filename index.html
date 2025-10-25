@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ABC Story Studio — Working</title>
+<script src="https://cdn.jsdelivr.net/npm/konva@8.4.3/konva.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#f0f8ff; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; }
+  h1 { margin:12px 0 6px; }
+  #mainContent { display:flex; gap:12px; align-items:flex-start; justify-content:center; }
+  #categoryButtons { display:flex; flex-direction:column; gap:8px; margin-right:8px; }
+  #categoryButtons button {
+    font-size:16px; padding:10px 16px; border-radius:12px; border:none; cursor:pointer;
+    background:#ffcc00; color:#000; transition:0.12s; display:flex; align-items:center; gap:8px;
+  }
+  #backgroundBtn { font-size:18px; padding:18px 16px; height:92px; background:#ff9933; font-weight:600; color:#fff; background-image:url('https://i.imgur.com/T4ZUP6U.png'); background-size:cover; background-position:center; }
+  #categoryButtons button:hover { transform:scale(1.05); }
+
+  #canvasContainer { display:flex; flex-direction:column; align-items:center; border:2px solid #333; background:#fff; padding:6px; position:relative; }
+  #container { width:800px; height:500px; background:#fff; }
+
+  #recordButtons { display:flex; gap:10px; align-items:center; margin-top:8px; justify-content:center; width:100%; }
+  #recordButtons button { font-size:15px; padding:10px 14px; border-radius:10px; border:none; cursor:pointer; color:#000; }
+  #recordBtn { background:#9fd6ff; }   /* light blue */
+  #stopBtn   { background:#ff4d4d; }   /* red */
+  #playBtn   { background:#7ed07a; }   /* green */
+  #downloadBtn{ background:#ffd24d; }  /* yellow */
+  #recordButtons button:hover { transform:scale(1.06); }
+
+  #countdown {
+    font-weight:700; padding:8px 12px; border-radius:8px; border:2px solid #999; background:#e6e6e6; color:#000;
+  }
+
+  #stickerMenu {
+    width:220px; height:500px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:6px; box-sizing:border-box; background:#fff; border-left: 0;
+  }
+
+  .sticker-item { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .sticker-item img { width:60px; height:60px; object-fit:contain; border:2px solid #333; border-radius:8px; cursor:pointer; }
+  .sticker-item span { font-size:12px; color:#333; }
+
+  .playback-video { position:absolute; z-index:9999; pointer-events:none; left:0; top:0; }
+</style>
+</head>
+<body>
+  <h1>🎨 ABC Story Studio</h1>
+
+  <div id="mainContent">
+    <div id="categoryButtons">
+      <button id="backgroundBtn" onclick="showBackgrounds()">Backgrounds 🖌️</button>
+      <button onclick="showCategory('animals')">Animals 🐶🐱🐘</button>
+      <button onclick="showCategory('transportation')">Transportation 🚗✈️🚀</button>
+      <button onclick="showCategory('ocean')">Ocean 🐠🐬🦀</button>
+      <button onclick="showCategory('space')">Space 🪐🚀👽</button>
+      <button onclick="showCategory('holidays')">Holidays 🎃🎄🎉</button>
+      <button onclick="showCategory('nature')">Nature 🌳🌸🌞</button>
+      <button onclick="showCategory('people')">People 🧍‍♂️🧍‍♀️</button>
+      <button onclick="showCategory('sports')">Sports ⚽🏀</button>
+    </div>
+
+    <div id="canvasContainer">
+      <div id="container"></div>
+
+      <div id="recordButtons">
+        <button id="recordBtn" onclick="startRecording()">🔴 Record</button>
+        <div id="countdown">30</div>
+        <button id="stopBtn" onclick="stopRecording()">⏹ Stop</button>
+        <button id="playBtn" onclick="playRecording()">▶️ Play</button>
+        <button id="downloadBtn" onclick="downloadRecording()">💾 Download</button>
+      </div>
+    </div>
+
+    <div id="stickerMenu"></div>
+  </div>
+
+<script>
+/* Konva stage + layers */
+const width = 800, height = 500;
+const stage = new Konva.Stage({ container: 'container', width, height });
+const mainLayer = new Konva.Layer();
+stage.add(mainLayer);
+let bgLayer = null;
+
+const tr = new Konva.Transformer({ rotateEnabled:true, enabledAnchors:['top-left','top-right','bottom-left','bottom-right'] });
+mainLayer.add(tr);
+let selectedSticker = null;
+
+/* Sticker data: replace URLs with your GitHub Pages URLs */
+const stickersData = {
+  animals: ['https://yourusername.github.io/abc-story-studio/images/animals/dino1.png'],
+  transportation: ['https://yourusername.github.io/abc-story-studio/images/transportation/car.png'],
+  ocean: ['https://yourusername.github.io/abc-story-studio/images/ocean/fish.png'],
+  space: ['https://yourusername.github.io/abc-story-studio/images/space/rocket.png'],
+  holidays: ['https://yourusername.github.io/abc-story-studio/images/holidays/pumpkin.png'],
+  nature: ['https://yourusername.github.io/abc-story-studio/images/nature/tree.png'],
+  people: ['https://yourusername.github.io/abc-story-studio/images/people/person1.png'],
+  sports: ['https://yourusername.github.io/abc-story-studio/images/soccer.png']
+};
+
+const stickerMenu = document.getElementById('stickerMenu');
+const STANDARD_SCALE = 0.5;
+
+/* Show stickers in menu */
+function showCategory(category){
+  stickerMenu.innerHTML = '';
+  const list = stickersData[category] || [];
+  list.forEach(src => {
+    const container = document.createElement('div');
+    container.className = 'sticker-item';
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.draggable = true;
+    img.ondragstart = e => { e.dataTransfer.setData('text/plain', src); };
+    img.onclick = () => addSticker(src);
+
+    const label = document.createElement('span');
+    label.textContent = src.split('/').pop().replace(/\.[^/.]+$/, '');
+
+    container.appendChild(img);
+    container.appendChild(label);
+    stickerMenu.appendChild(container);
+  });
+}
+
+/* Backgrounds placeholder */
+const backgroundColors = ['#ffffff','#ffd9d9','#d9ffd9','#d9e6ff','#ffffd9','#f0d9ff'];
+function showBackgrounds(){
+  stickerMenu.innerHTML = '';
+  backgroundColors.forEach(color=>{
+    const div = document.createElement('div'); div.className='sticker-item';
+    const sw = document.createElement('div');
+    sw.style.width='60px'; sw.style.height='60px'; sw.style.border='2px solid #333'; sw.style.borderRadius='8px'; sw.style.background=color; sw.style.cursor='pointer';
+    sw.onclick = () => {
+      if (bgLayer) { bgLayer.destroy(); bgLayer=null; }
+      bgLayer = new Konva.Layer();
+      stage.add(bgLayer);
+      const rect = new Konva.Rect({x:0,y:0,width,height,fill:color});
+      bgLayer.add(rect); bgLayer.moveToBottom(); stage.draw();
+    };
+    const label = document.createElement('span'); label.textContent=color;
+    div.appendChild(sw); div.appendChild(label); stickerMenu.appendChild(div);
+  });
+}
+
+/* Drag/drop onto canvas */
+stage.container().addEventListener('dragover', e=>e.preventDefault());
+stage.container().addEventListener('drop', e=>{
+  e.preventDefault();
+  const src = e.dataTransfer.getData('text/plain');
+  const rect = stage.container().getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  addSticker(src,x,y);
+});
+
+/* Add sticker to canvas */
+function addSticker(src, x=width/2, y=height/2){
+  const img = new Image();
+  img.src = src;
+  img.onload = () => {
+    const sticker = new Konva.Image({ image:img, x:x-50+Math.random()*100, y:y-50+Math.random()*100, scaleX:STANDARD_SCALE, scaleY:STANDARD_SCALE, draggable:true });
+    mainLayer.add(sticker); mainLayer.draw();
+
+    sticker.on('click', e => { selectedSticker=sticker; tr.nodes([sticker]); mainLayer.draw(); e.cancelBubble=true; });
+    sticker.on('dragend', () => { if(sticker.x()<0 || sticker.y()<0 || sticker.x()>width || sticker.y()>height){ if(selectedSticker===sticker)selectedSticker=null; sticker.destroy(); mainLayer.draw(); }});
+  };
+  img.onerror=()=>{ alert('Failed to load image: '+src); };
+}
+
+/* Keyboard delete */
+document.addEventListener('keydown', e => {
+  if((e.key==='Backspace'||e.key==='Delete') && selectedSticker){
+    tr.nodes([]); selectedSticker.destroy(); selectedSticker=null; mainLayer.draw();
+  }
+});
+
+/* Recording */
+let recorder=null, recordedChunks=[], recordingBlob=null, countdownInterval=null, rafId=null;
+const countdownEl = document.getElementById('countdown');
+
+const offscreen = document.createElement('canvas');
+offscreen.width=width; offscreen.height=height;
+const offCtx = offscreen.getContext('2d');
+
+function startRecording(){
+  if(recorder && recorder.state==='recording') return;
+  offscreen.width=width; offscreen.height=height;
+  recordedChunks=[];
+  const stream = offscreen.captureStream(30);
+  recorder = new MediaRecorder(stream,{mimeType:'video/webm'});
+  recorder.ondataavailable = e => { if(e.data && e.data.size) recordedChunks.push(e.data); };
+  recorder.onstop = () => { recordingBlob = new Blob(recordedChunks,{type:'video/webm'}); };
+
+  // draw loop
+  function drawFrame(){
+    offCtx.clearRect(0,0,width,height);
+    if(bgLayer){ offCtx.drawImage(bgLayer.getCanvas()._canvas,0,0); }
+    offCtx.drawImage(mainLayer.getCanvas()._canvas,0,0);
+    if(recorder && recorder.state==='recording'){ rafId=requestAnimationFrame(drawFrame); }
+  }
+
+  recorder.start();
+  drawFrame();
+
+  let remaining=30;
+  countdownEl.textContent=remaining; countdownEl.style.color='red';
+  countdownInterval=setInterval(()=>{ remaining--; countdownEl.textContent=remaining; if(remaining<=0) stopRecording(); },1000);
+}
+
+function stopRecording(){
+  if(recorder && recorder.state==='recording') recorder.stop();
+  if(countdownInterval){ clearInterval(countdownInterval); countdownInterval=null; }
+  if(rafId){ cancelAnimationFrame(rafId); rafId=null; }
+  countdownEl.style.color='black'; countdownEl.textContent='0';
+}
+
+/* Playback */
+function playRecording(){
+  if(!recordingBlob){ alert('No recording yet!'); return; }
+  const videoURL=URL.createObjectURL(recordingBlob);
+  const video=document.createElement('video');
+  video.src=videoURL; video.autoplay=true; video.controls=false; video.muted=true;
+  video.className='playback-video'; video.width=width; video.height=height;
+  const rect=stage.container().getBoundingClientRect();
+  video.style.left=rect.left+'px'; video.style.top=rect.top+'px';
+  document.body.appendChild(video);
+  video.play();
+  video.addEventListener('ended',()=>{ video.remove(); });
+  video.addEventListener('click',()=>video.remove());
+}
+
+/* Download */
+function downloadRecording(){
+  if(!recordingBlob){ alert('No recording to download'); return; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(recordingBlob); a.download='abc_story_studio_recording.webm'; a.click();
+}
+
+/* Initial */
+showCategory('animals');
+</script>
+</body>
+</html>
